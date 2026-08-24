@@ -1,0 +1,5 @@
+spacy>=3.0
+negspacy>=0.0.12
+sentence-transformers>=2.2.0
+google-generativeai>=0.8.0
+
