@@ -1,0 +1,38 @@
+[
+  {
+    "id": 1,
+    "negative": "Don't use jargon in the explanation.",
+    "positive": "Use plain language in the explanation.",
+    "notes": "lexical"
+  },
+  {
+    "id": 2,
+    "negative": "Do not include code examples.",
+    "positive": "Provide an explanation without code examples.",
+    "notes": "structural"
+  },
+  {
+    "id": 3,
+    "negative": "Never mention internal company names.",
+    "positive": "Leave internal company names out of the explanation.",
+    "notes": "behavioral"
+  },
+  {
+    "id": 4,
+    "negative": "Exclude references to future work.",
+    "positive": "Omit references to future work.",
+    "notes": "structural"
+  },
+  {
+    "id": 5,
+    "negative": "Avoid using passive voice.",
+    "positive": "Use active voice where possible.",
+    "notes": "lexical"
+  },
+  {
+    "id": 6,
+    "negative": "Without using domain-specific acronyms, summarize the method.",
+    "positive": "Summarize the method and omit domain-specific acronyms.",
+    "notes": "lexical"
+  }
+]
