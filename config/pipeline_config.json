@@ -1,0 +1,6 @@
+{
+  "similarity_threshold": 0.6,
+  "fallback_to_original": true,
+  "dataset_path": "data/pilot_constraints.json",
+  "generation_strategy": "generative"
+}
