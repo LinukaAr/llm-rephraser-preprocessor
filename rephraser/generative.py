@@ -138,6 +138,19 @@ class GenerativeRephraser:
         normalized = _collapse_whitespace(text)
         lowered = normalized.lower()
 
+        change_match = re.match(r"^\s*(?:do not|don't|never|avoid|refrain from)\s+(?:change|alter|modify)\s+(.+?)(?:[.?!]+)?\s*$", normalized, flags=re.IGNORECASE)
+        if change_match:
+            target = change_match.group(1).strip(" .,")
+            return f"Keep {target} as-is."
+
+        add_match = re.match(r"^\s*(?:do not|don't|never|avoid)\s+add\s+(.+?)(?:\s+to\s+(.+?))?(?:[.?!]+)?\s*$", normalized, flags=re.IGNORECASE)
+        if add_match:
+            added = add_match.group(1).strip(" .,")
+            target = add_match.group(2)
+            if target:
+                return f"Keep {target.strip(' .,')} free of {added}."
+            return f"Keep {added} out of the result."
+
         eat_match = re.match(r"^\s*(?:do not|don't)\s+eat\s+(.+?)(?:[.?!]+)?\s*$", normalized, flags=re.IGNORECASE)
         if eat_match:
             food = eat_match.group(1).strip(" .,")

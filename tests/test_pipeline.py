@@ -25,3 +25,12 @@ def test_pipeline_uses_generative_strategy_when_configured():
     assert result.candidate_text != ""
     assert result.output_text != ""
 
+
+def test_generator_preserves_prohibition_meaning_for_change_requests():
+    from rephraser.generative import GenerativeRephraser
+
+    generator = GenerativeRephraser(use_gemini=False)
+    result = generator.generate(type("Constraint", (), {"text": "don't change the face of the person"})())
+    assert "as-is" in result.lower() or "intact" in result.lower()
+    assert "change" not in result.lower()
+
