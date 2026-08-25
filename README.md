@@ -4,13 +4,14 @@ This small package contains a pilot `Constraint` datatype, a negation detector,
 retrieval-based rephrasing, a deterministic generative rephraser, a similarity
 verifier, and an end-to-end pipeline with latency instrumentation.
 
+## Flow
+![Flow](docs/flow.gif)
+
 ## Demo video
 
-You can view the demo video in the repository here:
+[![Demo video](docs/thumbnail.png)](https://youtu.be/Xpq4oY3GHPg)
 
-[docs/demo.mp4](docs/demo.mp4)
-
-(Note: GitHub does not reliably render raw MP4 video tags in README files. If you need inline playback on GitHub consider converting the short demo to an animated GIF and embedding it with `![demo](docs/demo.gif)`, or hosting the MP4 on an external service like YouTube/Vimeo and embedding a link or iframe.)
+Click the thumbnail to watch the demo video on YouTube.
 
 Quick start:
 
