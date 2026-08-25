@@ -1,8 +1,14 @@
-# Rephraser pre-processor (pilot)
+# Rephraser pre-processor
 
 This small package contains a pilot `Constraint` datatype, a negation detector,
 retrieval-based rephrasing, a deterministic generative rephraser, a similarity
 verifier, and an end-to-end pipeline with latency instrumentation.
+
+## Demo video
+
+<div align="center">
+  <video src="docs/demo.mp4" controls width="900"></video>
+</div>
 
 Quick start:
 
