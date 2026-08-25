@@ -6,9 +6,11 @@ verifier, and an end-to-end pipeline with latency instrumentation.
 
 ## Demo video
 
-<div align="center">
-  <video src="docs/demo.mp4" controls width="900"></video>
-</div>
+You can view the demo video in the repository here:
+
+[docs/demo.mp4](docs/demo.mp4)
+
+(Note: GitHub does not reliably render raw MP4 video tags in README files. If you need inline playback on GitHub consider converting the short demo to an animated GIF and embedding it with `![demo](docs/demo.gif)`, or hosting the MP4 on an external service like YouTube/Vimeo and embedding a link or iframe.)
 
 Quick start:
 
