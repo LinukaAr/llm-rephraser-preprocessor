@@ -11,62 +11,71 @@ def _collapse_whitespace(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _strip_leading_negation(text: str) -> str:
-    text = re.sub(r"^\s*(do not|don't|never|avoid|refrain from|without|exclude|excluding)\s+", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"^\s*please\s+", "", text, flags=re.IGNORECASE)
-    return text.strip(" .,")
-
-
 @dataclass
 class GenerativeRephraser:
-    """Gemini-backed rephraser with a deterministic local fallback.
+    """Gemini-backed rephraser.
 
-    The class first tries Gemini when an API key and SDK are available.
-    If that fails, it falls back to a deterministic rewrite so the pipeline
-    still runs offline and the tests remain stable.
+    The class tries Gemini when an API key and SDK are available. If that is
+    unavailable, it returns no candidate and records ``last_error`` so the
+    pipeline can fail closed without hiding why generation failed.
     """
 
     preserve_scope: bool = True
-    model_name: str = "gemini-1.5-flash"
+    model_name: str = "gemini-3.5-flash-lite"
     api_key_env: str = "GEMINI_API_KEY"
     temperature: float = 0.2
-    max_output_tokens: int = 128
+    max_output_tokens: int = 512
     use_gemini: bool = True
+    request_timeout_seconds: float = 20.0
+    last_error: str = ""
 
     def build_prompt(self, constraint: Constraint) -> str:
         examples: List[str] = [
-            "Negative: Don't use jargon in the explanation.\nPositive: Use plain language in the explanation.",
-            "Negative: Do not include code examples.\nPositive: Provide an explanation focused on prose and concepts.",
-            "Negative: Avoid using passive voice.\nPositive: Use active voice where possible.",
-            "Negative: Don't eat junk food.\nPositive: Choose healthy food instead.",
+            'Input: "Don\'t use jargon in the explanation."\nOutput: "Use plain language in the explanation."',
+            'Input: "Do not include code examples."\nOutput: "Include prose explanations instead of code examples."',
+            'Input: "Avoid using passive voice."\nOutput: "Use active voice where possible."',
+            'Input: "Don\'t add sugar."\nOutput: "Add only sugar-free ingredients."',
         ]
         return "\n\n".join(
             examples
             + [
-                "Task: Rewrite the negative constraint below as a positive instruction.",
-                "Rules: preserve the intent and scope, keep it concise, and avoid negation words in the output.",
-                "If the source is a prohibition, rewrite it as a positive alternative or preference, not as permission to do the forbidden action.",
-                "Return only the rewritten positive instruction.",
-                f"Negative: {constraint.text}",
+                "Rewrite the final input as one affirmative instruction sentence.",
+                "Preserve the original intent and scope.",
+                "Keep the main action verb and exact key object nouns when an affirmative rewrite can still preserve the meaning.",
+                "Do not replace key object nouns with synonyms.",
+                "The output must not contain negation cues such as no, not, don't, never, without, avoid, exclude, or other than.",
+                "Correct obvious spelling mistakes while preserving meaning.",
+                "Treat full stop or fulstop as the period punctuation mark at the end of a sentence.",
+                "Return only the rewritten sentence, with no label, list, commentary, or quoted text.",
+                f'Input: "{constraint.text}"',
+                "Output:",
             ]
         )
 
     def _load_gemini_model(self):
+        self.last_error = ""
         api_key = os.getenv(self.api_key_env) or os.getenv("GOOGLE_API_KEY")
         if not api_key:
             api_key = self._load_api_key_from_file()
         if not api_key:
+            self.last_error = "gemini_api_key_missing"
             return None
 
         try:
-            import google.generativeai as genai  # type: ignore
-        except Exception:
+            from google import genai  # type: ignore
+            from google.genai import types  # type: ignore
+        except Exception as exc:
+            self.last_error = f"gemini_sdk_missing: install google-genai ({type(exc).__name__}: {exc})"
             return None
 
         try:
-            genai.configure(api_key=api_key)
-            return genai, genai.GenerativeModel(self.model_name)
-        except Exception:
+            client = genai.Client(
+                api_key=api_key,
+                http_options=types.HttpOptions(timeout=int(self.request_timeout_seconds * 1000)),
+            )
+            return types, client
+        except Exception as exc:
+            self.last_error = f"gemini_config_error: {type(exc).__name__}: {exc}"
             return None
 
     def _load_api_key_from_file(self) -> str:
@@ -96,7 +105,10 @@ class GenerativeRephraser:
         return ""
 
     def _extract_text(self, response) -> str:
-        candidate = getattr(response, "text", None)
+        try:
+            candidate = getattr(response, "text", None)
+        except Exception:
+            candidate = None
         if candidate:
             return str(candidate)
 
@@ -119,70 +131,37 @@ class GenerativeRephraser:
         if model_handle is None:
             return ""
 
-        genai, model = model_handle
+        types, client = model_handle
         prompt = self.build_prompt(constraint)
         try:
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(  # type: ignore[attr-defined]
+            response = client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
                     temperature=self.temperature,
                     max_output_tokens=self.max_output_tokens,
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+                    thinking_config=types.ThinkingConfig(
+                        include_thoughts=False,
+                        thinking_level=types.ThinkingLevel.LOW,
+                    ),
                 ),
             )
-        except Exception:
+        except Exception as exc:
+            self.last_error = f"gemini_generate_error: {type(exc).__name__}: {exc}"
             return ""
 
-        return self._sanitize_output(self._extract_text(response))
-
-    def _rewrite(self, text: str) -> str:
-        normalized = _collapse_whitespace(text)
-        lowered = normalized.lower()
-
-        change_match = re.match(r"^\s*(?:do not|don't|never|avoid|refrain from)\s+(?:change|alter|modify)\s+(.+?)(?:[.?!]+)?\s*$", normalized, flags=re.IGNORECASE)
-        if change_match:
-            target = change_match.group(1).strip(" .,")
-            return f"Keep {target} as-is."
-
-        add_match = re.match(r"^\s*(?:do not|don't|never|avoid)\s+add\s+(.+?)(?:\s+to\s+(.+?))?(?:[.?!]+)?\s*$", normalized, flags=re.IGNORECASE)
-        if add_match:
-            added = add_match.group(1).strip(" .,")
-            target = add_match.group(2)
-            if target:
-                return f"Keep {target.strip(' .,')} free of {added}."
-            return f"Keep {added} out of the result."
-
-        eat_match = re.match(r"^\s*(?:do not|don't)\s+eat\s+(.+?)(?:[.?!]+)?\s*$", normalized, flags=re.IGNORECASE)
-        if eat_match:
-            food = eat_match.group(1).strip(" .,")
-            return f"Choose healthy food instead of {food}."
-
-        if "jargon" in lowered:
-            return "Use plain language in the explanation."
-
-        if "passive voice" in lowered:
-            return "Use active voice where possible."
-
-        if "code examples" in lowered:
-            return "Provide an explanation focused on prose and concepts."
-
-        if "future work" in lowered:
-            return "Focus the response on the current task and immediate objective."
-
-        if "internal company names" in lowered:
-            return "Leave internal company names out of the explanation."
-
-        if "acronym" in lowered or "acronyms" in lowered:
-            return "Summarize the method using plain language and no domain-specific acronyms."
-
-        stripped = _strip_leading_negation(normalized)
-        if stripped:
-            if stripped[0].islower():
-                stripped = stripped[0].upper() + stripped[1:]
-            return stripped if stripped.endswith(".") else f"{stripped}."
-
-        return "Use clear, affirmative instructions that preserve the original intent."
+        candidate = self._sanitize_output(self._extract_text(response))
+        if not candidate:
+            self.last_error = "gemini_empty_response"
+        return candidate
 
     def generate(self, constraint: Constraint) -> str:
+        self.last_error = ""
+        if not self.use_gemini:
+            self.last_error = "gemini_disabled"
+            return ""
+
         if self.use_gemini:
             candidate = self._generate_with_gemini(constraint)
             if candidate:
@@ -190,4 +169,4 @@ class GenerativeRephraser:
 
         _prompt = self.build_prompt(constraint)
         _ = _prompt  # keep the prompt construction explicit for traceability
-        return self._rewrite(constraint.text)
+        return ""

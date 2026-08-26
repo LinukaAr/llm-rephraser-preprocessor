@@ -8,7 +8,7 @@ from .detector import detect_negation
 from .generative import GenerativeRephraser
 from .retrieval import RetrievalRephraser
 from .types import Constraint
-from .verifier import passes_threshold, similarity_score
+from .verifier import passes_threshold, repeats_prohibited_action, similarity_score
 
 
 @dataclass
@@ -114,6 +114,8 @@ class RephraserPipeline:
         candidate_text, strategy = self._generate_candidate(constraint, timings)
         if not candidate_text:
             fallback_reason = "no_candidate"
+            if strategy == "generative":
+                fallback_reason = getattr(self.generative_rephraser, "last_error", "") or fallback_reason
             output_text = text if self.config.fallback_to_original else ""
             timings.append(StepTiming(name="total", milliseconds=(perf_counter() - total_start) * 1000.0))
             return RephraseResult(
@@ -138,7 +140,8 @@ class RephraserPipeline:
         passed, threshold_score = passes_threshold(text, candidate_text, threshold=self.config.similarity_threshold)
 
         negation_leaked = detect_negation(candidate_text).detected_negation
-        passed_verifier = passed and not negation_leaked
+        repeated_prohibited_action = repeats_prohibited_action(text, candidate_text)
+        passed_verifier = passed and not negation_leaked and not repeated_prohibited_action
 
         if passed_verifier:
             output_text = candidate_text

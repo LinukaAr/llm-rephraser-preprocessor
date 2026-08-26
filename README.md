@@ -29,8 +29,9 @@ If you want the rephraser to call Gemini, also set your API key in PowerShell:
 $env:GEMINI_API_KEY = "your_api_key_here"
 ```
 
-The Gemini-backed generator uses `google-generativeai` and falls back to the
-local rewrite rules if the SDK or key is unavailable.
+The Gemini-backed generator uses `google-genai`. If the SDK, key, or API call is
+unavailable, the pipeline fails closed with a visible `fallback_reason` instead
+of inventing a rewrite.
 
 You can also place the key in `config/gemini.env`; the generator will load that
 file automatically if `GEMINI_API_KEY` is not already present in the shell.
@@ -51,7 +52,7 @@ print(detect_negation("Don't use jargon in the explanation."))
 Pipeline configuration lives in `config/pipeline_config.json`. The default
 pipeline keeps a timing trace for `detect_negation`, candidate generation,
 similarity scoring, and total runtime.
-For this pilot, the similarity threshold is tuned to `0.6` so short
+For this pilot, the similarity threshold is tuned to `0.5` so short
 source-preserving affirmative rewrites are accepted instead of being rejected
 as too dissimilar.
 
@@ -60,6 +61,10 @@ To switch to the generative rewrite path, change `generation_strategy` to
 
 The current rewrite templates prefer minimal source-preserving edits, so the
 positive candidate keeps as much of the original sentence shape as possible.
+
+For Cloud Run, the hosted default uses the lightweight `token-overlap`
+similarity model so the service stays under the memory limit. If you want to
+switch back to Qwen embeddings locally, set `SIMILARITY_MODEL=Qwen/Qwen3-Embedding-0.6B`.
 
 The hosted API does not require local setup on your machine if you deploy the
 Docker image. The runtime inputs are the container image and optional
@@ -103,7 +108,7 @@ gcloud config set run/region YOUR_REGION
 Dockerfile and push it for you.
 
 ```powershell
-gcloud run deploy negation-rephraser --source . --allow-unauthenticated --port 8000 --set-env-vars GEMINI_API_KEY=your_key_here
+gcloud run deploy negation-rephraser --source . --allow-unauthenticated --port 8000 --memory 1Gi --set-env-vars GEMINI_API_KEY=your_key_here,SIMILARITY_MODEL=token-overlap
 ```
 
 You can also run the helper script in the repo root:

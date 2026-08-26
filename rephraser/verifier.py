@@ -1,12 +1,80 @@
+import os
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
 from .text import word_tokens
 
 
-DEFAULT_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 TOKEN_OVERLAP_MODEL = "token-overlap"
+DEFAULT_EMBEDDING_MODEL = os.getenv("SIMILARITY_MODEL", TOKEN_OVERLAP_MODEL)
 _MODEL_CACHE: Dict[str, object] = {}
+SIMILARITY_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "at",
+    "do",
+    "don",
+    "dont",
+    "not",
+    "of",
+    "please",
+    "the",
+    "to",
+    "t",
+}
+NEGATED_ACTION_CUES = {
+    ("don", "t"),
+    ("dont",),
+    ("do", "not"),
+    ("never",),
+    ("avoid",),
+}
+SAFE_AVOIDANCE_MARKERS = {
+    "free",
+    "instead",
+    "omit",
+    "omitted",
+    "omitting",
+    "leave",
+    "leaving",
+    "left",
+    "out",
+    "skip",
+    "skipping",
+}
+
+
+def _content_tokens(text: str) -> set[str]:
+    return {token for token in word_tokens(text) if token not in SIMILARITY_STOPWORDS}
+
+
+def _prohibited_action_terms(text: str) -> Tuple[str, str] | None:
+    tokens = word_tokens(text)
+    for index in range(len(tokens)):
+        for cue in NEGATED_ACTION_CUES:
+            cue_end = index + len(cue)
+            if tuple(tokens[index:cue_end]) != cue or cue_end >= len(tokens):
+                continue
+
+            action = tokens[cue_end]
+            for token in tokens[cue_end + 1 :]:
+                if token not in SIMILARITY_STOPWORDS:
+                    return action, token
+    return None
+
+
+def repeats_prohibited_action(original: str, candidate: str) -> bool:
+    terms = _prohibited_action_terms(original)
+    if terms is None:
+        return False
+
+    action, object_token = terms
+    candidate_tokens = set(word_tokens(candidate))
+    if action not in candidate_tokens or object_token not in candidate_tokens:
+        return False
+
+    return not bool(candidate_tokens & SAFE_AVOIDANCE_MARKERS)
 
 
 @dataclass(frozen=True)
@@ -17,17 +85,19 @@ class SimilarityResult:
 
 
 def _overlap_score(a: str, b: str) -> float:
-    tokens_a = word_tokens(a)
-    tokens_b = word_tokens(b)
-    if not tokens_a or not tokens_b:
+    set_a = _content_tokens(a)
+    set_b = _content_tokens(b)
+    if not set_a or not set_b:
         return 0.0
 
-    set_a = set(tokens_a)
-    set_b = set(tokens_b)
+    intersection = len(set_a & set_b)
     denominator = (len(set_a) + len(set_b)) / 2
     if denominator == 0:
         return 0.0
-    return len(set_a & set_b) / denominator
+
+    overlap = intersection / denominator
+    source_recall = intersection / len(set_a)
+    return max(overlap, source_recall)
 
 
 def _embedding_score(a: str, b: str, model_name: str) -> float:

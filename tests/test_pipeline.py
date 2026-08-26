@@ -19,18 +19,25 @@ def test_pipeline_rephrases_negative_constraint():
 
 
 def test_pipeline_uses_generative_strategy_when_configured():
-    pipeline = RephraserPipeline(config=PipelineConfig(similarity_threshold=0.1, generation_strategy="generative"))
-    result = pipeline.process("Do not include code examples.")
-    assert result.strategy == "generative"
-    assert result.candidate_text != ""
-    assert result.output_text != ""
-
-
-def test_generator_preserves_prohibition_meaning_for_change_requests():
     from rephraser.generative import GenerativeRephraser
 
     generator = GenerativeRephraser(use_gemini=False)
-    result = generator.generate(type("Constraint", (), {"text": "don't change the face of the person"})())
-    assert "as-is" in result.lower() or "intact" in result.lower()
-    assert "change" not in result.lower()
+    pipeline = RephraserPipeline(
+        config=PipelineConfig(similarity_threshold=0.1, generation_strategy="generative"),
+        generative_rephraser=generator,
+    )
+    result = pipeline.process("Do not include code examples.")
+    assert result.strategy == "generative"
+    assert result.candidate_text == ""
+    assert result.flagged
+    assert result.fallback_reason == "gemini_disabled"
+    assert result.output_text == "Do not include code examples."
 
+
+def test_generator_fails_closed_without_gemini():
+    from rephraser.generative import GenerativeRephraser
+
+    generator = GenerativeRephraser(use_gemini=False)
+    result = generator.generate(type("Constraint", (), {"text": "don't tell her to come"})())
+    assert result == ""
+    assert generator.last_error == "gemini_disabled"
