@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 import json
+import os
 from typing import Any, Dict, Union
 
 
@@ -12,18 +13,24 @@ class PipelineConfig:
     dataset_path: str = "data/pilot_constraints.json"
     generation_strategy: str = "retrieval"
     # Similarity model used by the verifier.
+    # The SIMILARITY_MODEL env var always takes precedence over this value,
+    # so Cloud Run can pin token-overlap without changing the config file.
     # Production / evaluation runs: "Qwen/Qwen3-Embedding-0.6B"
-    # Lightweight / test runs:      "token-overlap"
+    # Lightweight / Cloud Run / test runs: "token-overlap"
     similarity_model: str = "token-overlap"
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "PipelineConfig":
+        # SIMILARITY_MODEL env var overrides the config file value.
+        # This lets Cloud Run (which sets SIMILARITY_MODEL=token-overlap) stay
+        # within its memory limit while local evaluation runs use Qwen embeddings.
+        env_model = os.getenv("SIMILARITY_MODEL")
         return cls(
             similarity_threshold=float(data.get("similarity_threshold", 0.85)),
             fallback_to_original=bool(data.get("fallback_to_original", True)),
             dataset_path=str(data.get("dataset_path", "data/pilot_constraints.json")),
             generation_strategy=str(data.get("generation_strategy", "retrieval")),
-            similarity_model=str(data.get("similarity_model", "token-overlap")),
+            similarity_model=env_model or str(data.get("similarity_model", "token-overlap")),
         )
 
     @classmethod
