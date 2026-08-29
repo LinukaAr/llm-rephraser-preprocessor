@@ -3,5 +3,5 @@
   "fallback_to_original": true,
   "dataset_path": "data/pilot_constraints.json",
   "generation_strategy": "generative",
-  "similarity_model": "Qwen/Qwen3-Embedding-0.6B"
+  "similarity_model": "token-overlap"
 }
