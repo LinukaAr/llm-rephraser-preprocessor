@@ -21,7 +21,7 @@ class GenerativeRephraser:
     """
 
     preserve_scope: bool = True
-    model_name: str = "gemini-2.0-flash-lite"
+    model_name: str = "gemini-3.5-flash-lite"
     api_key_env: str = "GEMINI_API_KEY"
     temperature: float = 0.2
     max_output_tokens: int = 512
