@@ -1,8 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 import re
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from .types import Constraint
 
@@ -13,21 +13,24 @@ def _collapse_whitespace(text: str) -> str:
 
 @dataclass
 class GenerativeRephraser:
-    """Gemini-backed rephraser.
+    """Gemini-backed generative rephraser.
 
-    The class tries Gemini when an API key and SDK are available. If that is
-    unavailable, it returns no candidate and records ``last_error`` so the
-    pipeline can fail closed without hiding why generation failed.
+    Tries Gemini when an API key and SDK are available. If either is
+    unavailable the method returns an empty string and records ``last_error``
+    so the pipeline can fail closed without hiding why generation failed.
     """
 
     preserve_scope: bool = True
-    model_name: str = "gemini-3.5-flash-lite"
+    model_name: str = "gemini-2.0-flash-lite"
     api_key_env: str = "GEMINI_API_KEY"
     temperature: float = 0.2
     max_output_tokens: int = 512
     use_gemini: bool = True
     request_timeout_seconds: float = 20.0
     last_error: str = ""
+    # Internal: cached (types_module, client) tuple to avoid rebuilding the
+    # Gemini client on every generate() call.
+    _cached_client: Optional[Tuple] = field(default=None, init=False, repr=False)
 
     def build_prompt(self, constraint: Constraint) -> str:
         examples: List[str] = [
@@ -52,7 +55,11 @@ class GenerativeRephraser:
             ]
         )
 
-    def _load_gemini_model(self):
+    def _load_gemini_model(self) -> Optional[Tuple]:
+        """Return the cached (types, client) tuple, building it on first call."""
+        if self._cached_client is not None:
+            return self._cached_client
+
         self.last_error = ""
         api_key = os.getenv(self.api_key_env) or os.getenv("GOOGLE_API_KEY")
         if not api_key:
@@ -73,7 +80,8 @@ class GenerativeRephraser:
                 api_key=api_key,
                 http_options=types.HttpOptions(timeout=int(self.request_timeout_seconds * 1000)),
             )
-            return types, client
+            self._cached_client = (types, client)
+            return self._cached_client
         except Exception as exc:
             self.last_error = f"gemini_config_error: {type(exc).__name__}: {exc}"
             return None
@@ -121,7 +129,7 @@ class GenerativeRephraser:
     def _sanitize_output(self, text: str) -> str:
         cleaned = _collapse_whitespace(text)
         cleaned = re.sub(r"^(positive|answer|rewrite)\s*:\s*", "", cleaned, flags=re.IGNORECASE)
-        cleaned = cleaned.strip('"\'`')
+        cleaned = cleaned.strip('"\' `')
         if cleaned.endswith("."):
             return cleaned
         return f"{cleaned}." if cleaned else ""
@@ -162,11 +170,4 @@ class GenerativeRephraser:
             self.last_error = "gemini_disabled"
             return ""
 
-        if self.use_gemini:
-            candidate = self._generate_with_gemini(constraint)
-            if candidate:
-                return candidate
-
-        _prompt = self.build_prompt(constraint)
-        _ = _prompt  # keep the prompt construction explicit for traceability
-        return ""
+        return self._generate_with_gemini(constraint)

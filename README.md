@@ -1,8 +1,8 @@
 # Rephraser pre-processor
 
-This small package contains a pilot `Constraint` datatype, a negation detector,
-retrieval-based rephrasing, a deterministic generative rephraser, a similarity
-verifier, and an end-to-end pipeline with latency instrumentation.
+This package implements the three-stage negative-to-positive constraint
+pre-processor pipeline: negation detection → candidate generation →
+semantic verification.
 
 ### Flow
 ![Flow](docs/flow.gif)
@@ -12,7 +12,43 @@ verifier, and an end-to-end pipeline with latency instrumentation.
   <img src="docs/thumbnail.png" alt="Demo video">
 </a>
 
-Quick start:
+---
+
+## Live Hosted Service (Google Cloud Run)
+
+The service is currently deployed and live on Cloud Run:
+
+- **Base URL:** `https://negation-rephraser-887349447313.europe-west1.run.app`
+- **Health Check:** `https://negation-rephraser-887349447313.europe-west1.run.app/health`
+- **Rephrase API:** `https://negation-rephraser-887349447313.europe-west1.run.app/rephrase`
+
+### Quick Test with Live API
+
+**PowerShell:**
+```powershell
+# Check health
+Invoke-RestMethod -Uri "https://negation-rephraser-887349447313.europe-west1.run.app/health"
+
+# Test rephrasing
+Invoke-RestMethod -Method Post -Uri "https://negation-rephraser-887349447313.europe-west1.run.app/rephrase" `
+  -ContentType "application/json" `
+  -Body '{"text":"Don'\''t use jargon in the explanation."}'
+```
+
+**cURL:**
+```bash
+# Check health
+curl https://negation-rephraser-887349447313.europe-west1.run.app/health
+
+# Test rephrasing
+curl -X POST https://negation-rephraser-887349447313.europe-west1.run.app/rephrase \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Don'\''t use jargon in the explanation."}'
+```
+
+---
+
+## Quick start (Local Development)
 
 1. Create a Python venv and install requirements:
 
@@ -20,139 +56,64 @@ Quick start:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python -m spacy download en_core_web_sm
 ```
 
-If you want the rephraser to call Gemini, also set your API key in PowerShell:
+2. Set your Gemini API key. Either export it in the shell:
 
 ```powershell
 $env:GEMINI_API_KEY = "your_api_key_here"
 ```
 
-The Gemini-backed generator uses `google-genai`. If the SDK, key, or API call is
-unavailable, the pipeline fails closed with a visible `fallback_reason` instead
-of inventing a rewrite.
+Or place it in `config/gemini.env` (this file is git-ignored):
 
-You can also place the key in `config/gemini.env`; the generator will load that
-file automatically if `GEMINI_API_KEY` is not already present in the shell.
+```
+GEMINI_API_KEY=your_api_key_here
+```
 
-2. Run the pipeline from the CLI:
+The generative rephraser uses `google-genai`. If the SDK, key, or API call is
+unavailable the pipeline fails closed with a visible `fallback_reason` field
+rather than fabricating a rewrite.
+
+3. Run the pipeline from the CLI:
 
 ```powershell
 python run_pipeline.py "Don't use jargon in the explanation."
 ```
 
-3. Run a quick interactive check:
+4. Run a quick interactive check:
 
 ```python
 from rephraser.detector import detect_negation
 print(detect_negation("Don't use jargon in the explanation."))
 ```
 
-Pipeline configuration lives in `config/pipeline_config.json`. The default
-pipeline keeps a timing trace for `detect_negation`, candidate generation,
-similarity scoring, and total runtime.
-For this pilot, the similarity threshold is tuned to `0.5` so short
-source-preserving affirmative rewrites are accepted instead of being rejected
-as too dissimilar.
+---
 
-To switch to the generative rewrite path, change `generation_strategy` to
-`generative` in `config/pipeline_config.json`.
+## Configuration
 
-The current rewrite templates prefer minimal source-preserving edits, so the
-positive candidate keeps as much of the original sentence shape as possible.
+Pipeline configuration lives in `config/pipeline_config.json`:
 
-For Cloud Run, the hosted default uses the lightweight `token-overlap`
-similarity model so the service stays under the memory limit. If you want to
-switch back to Qwen embeddings locally, set `SIMILARITY_MODEL=Qwen/Qwen3-Embedding-0.6B`.
+| Key | Default | Notes |
+|---|---|---|
+| `similarity_threshold` | `0.85` | FR-M2 gate. Candidates below this score are rejected. |
+| `generation_strategy` | `"generative"` | `"generative"` or `"retrieval"` |
+| `similarity_model` | `"Qwen/Qwen3-Embedding-0.6B"` | Embedding model for the verifier. Use `"token-overlap"` for lightweight/test runs. |
+| `fallback_to_original` | `true` | Pass original text through (flagged) when verifier rejects. |
+| `dataset_path` | `"data/pilot_constraints.json"` | Retrieval pair bank. |
 
-The hosted API does not require local setup on your machine if you deploy the
-Docker image. The runtime inputs are the container image and optional
-environment variables such as `GEMINI_API_KEY` and `PIPELINE_CONFIG_PATH`.
+The default config uses Qwen embeddings for evaluation runs. The hosted Cloud
+Run service overrides `similarity_model` to `token-overlap` via the
+`SIMILARITY_MODEL` environment variable to stay within the 1 Gi memory limit.
 
-## Host it remotely
+---
 
-The repo now includes a small FastAPI service in [app.py](app.py) and a
-container definition in [Dockerfile](Dockerfile).
-
-Cloud Run is the intended host. The container already listens on the platform
-`PORT` variable, so you can deploy it directly.
+## Running tests
 
 ```powershell
-docker build -t negation-rephraser .
-docker run -p 8000:8000 -e GEMINI_API_KEY=your_key_here negation-rephraser
+pytest
 ```
 
-Then call the API:
+All tests use the `token-overlap` similarity model so they run offline without
+downloading any embedding model.
 
-```powershell
-curl -X POST http://localhost:8000/rephrase -H "Content-Type: application/json" -d '{"text":"Don't use jargon in the explanation."}'
-```
-
-Available routes:
-
-- `GET /health` for a simple health check
-- `POST /rephrase` for the hosted pipeline
-- `GET /` for a minimal service summary
-
-## Deploy to Cloud Run
-
-1. Set your Google Cloud project and region.
-
-```powershell
-gcloud config set project YOUR_PROJECT_ID
-gcloud config set run/region YOUR_REGION
-```
-
-2. Build and deploy from source. Cloud Build will build the container from the
-Dockerfile and push it for you.
-
-```powershell
-gcloud run deploy negation-rephraser --source . --allow-unauthenticated --port 8000 --memory 1Gi --set-env-vars GEMINI_API_KEY=your_key_here,SIMILARITY_MODEL=token-overlap
-```
-
-You can also run the helper script in the repo root:
-
-```powershell
-.\deploy-cloudrun.ps1 -ProjectId YOUR_PROJECT_ID -Region YOUR_REGION -GeminiApiKey YOUR_GEMINI_KEY
-```
-
-3. If you want to use a custom config file, upload it into the image or mount it
-through your build process, then set `PIPELINE_CONFIG_PATH` to that path in
-Cloud Run.
-
-4. After deployment, Cloud Run will give you a service URL. Test it with:
-
-```powershell
-curl https://YOUR_SERVICE_URL/health
-curl -X POST https://YOUR_SERVICE_URL/rephrase -H "Content-Type: application/json" -d '{"text":"Don't use jargon in the explanation."}'
-```
-
-## Deploy from GitHub
-
-Yes, you can deploy from GitHub instead of doing it manually from your machine.
-The repo now includes a GitHub Actions workflow at [.github/workflows/deploy-cloudrun.yml](.github/workflows/deploy-cloudrun.yml).
-
-Required GitHub secrets:
-
-- `GCP_WORKLOAD_IDENTITY_PROVIDER`
-- `GCP_SERVICE_ACCOUNT`
-- `GCP_PROJECT_ID`
-- `GCP_REGION`
-- `CLOUD_RUN_SERVICE`
-- `GEMINI_API_KEY` if you want the hosted service to call Gemini
-
-After the secrets are set, you can:
-
-- push to `main` and let the workflow deploy automatically
-- run it manually from GitHub Actions
-- trigger it with the GitHub CLI using `gh workflow run deploy-cloudrun.yml`
-
-If you want the workflow to use a different branch name or service name, edit the file directly.
-
-## Minimal Cloud Run checklist
-
-- Keep `Dockerfile` in the repo root.
-- Keep the app binding to `0.0.0.0` and the Cloud Run `PORT`.
-- Put secrets like `GEMINI_API_KEY` in Cloud Run environment variables, not in the repo.
-- Use the `/health` route for health checks and the `/rephrase` route for the actual API.
+---

@@ -6,8 +6,14 @@ from .text import word_tokens
 
 
 TOKEN_OVERLAP_MODEL = "token-overlap"
+# Module-level default: env var allows overriding in scripts that call the
+# verifier functions directly (e.g. standalone evaluation scripts).
+# The pipeline always passes model_name explicitly from PipelineConfig, so
+# this default is only reached when verifier functions are called standalone.
 DEFAULT_EMBEDDING_MODEL = os.getenv("SIMILARITY_MODEL", TOKEN_OVERLAP_MODEL)
+
 _MODEL_CACHE: Dict[str, object] = {}
+
 SIMILARITY_STOPWORDS = {
     "a",
     "an",
@@ -65,6 +71,7 @@ def _prohibited_action_terms(text: str) -> Tuple[str, str] | None:
 
 
 def repeats_prohibited_action(original: str, candidate: str) -> bool:
+    """Return True if *candidate* still performs the action that *original* prohibited."""
     terms = _prohibited_action_terms(original)
     if terms is None:
         return False
@@ -132,7 +139,7 @@ def similarity_result(a: str, b: str, model_name: Optional[str] = None) -> Simil
 
 
 def similarity_score(a: str, b: str, model_name: Optional[str] = None) -> float:
-    """Compute semantic similarity. Use token-overlap only as an explicit test model."""
+    """Compute semantic similarity between *a* and *b*."""
     return similarity_result(a, b, model_name=model_name).score
 
 

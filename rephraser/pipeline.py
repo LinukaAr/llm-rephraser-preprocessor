@@ -135,9 +135,14 @@ class RephraserPipeline:
         similarity_value = self._timed(
             timings,
             "similarity_score",
-            lambda: similarity_score(text, candidate_text),
+            lambda: similarity_score(text, candidate_text, model_name=self.config.similarity_model),
         )
-        passed, threshold_score = passes_threshold(text, candidate_text, threshold=self.config.similarity_threshold)
+        passed, _ = passes_threshold(
+            text,
+            candidate_text,
+            threshold=self.config.similarity_threshold,
+            model_name=self.config.similarity_model,
+        )
 
         negation_leaked = detect_negation(candidate_text).detected_negation
         repeated_prohibited_action = repeats_prohibited_action(text, candidate_text)

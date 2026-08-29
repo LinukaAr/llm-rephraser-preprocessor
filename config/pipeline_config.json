@@ -1,6 +1,7 @@
 {
-  "similarity_threshold": 0.65,
+  "similarity_threshold": 0.85,
   "fallback_to_original": true,
   "dataset_path": "data/pilot_constraints.json",
-  "generation_strategy": "generative"
+  "generation_strategy": "generative",
+  "similarity_model": "Qwen/Qwen3-Embedding-0.6B"
 }

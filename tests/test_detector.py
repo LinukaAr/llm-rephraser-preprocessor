@@ -16,3 +16,18 @@ def test_detect_unpunctuated_dont():
 def test_detect_no_negation():
     c = detect_negation("Please explain the method in plain language.")
     assert not c.detected_negation
+
+
+def test_detect_constraint_type_lexical():
+    c = detect_negation("Don't use jargon in the explanation.")
+    assert c.constraint_type == "lexical"
+
+
+def test_detect_constraint_type_structural():
+    c = detect_negation("Do not include code examples.")
+    assert c.constraint_type == "structural"
+
+
+def test_detect_constraint_type_behavioral():
+    c = detect_negation("Never mention internal company names.")
+    assert c.constraint_type == "behavioral"

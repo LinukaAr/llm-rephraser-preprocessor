@@ -15,7 +15,7 @@ DEFAULT_CONFIG_ENV = "PIPELINE_CONFIG_PATH"
 
 
 class RephraseRequest(BaseModel):
-    text: str = Field(..., min_length=1, description="Negative constraint text to rephrase")
+    text: str = Field(..., min_length=1, max_length=2000, description="Negative constraint text to rephrase")
 
 
 class RephraseResponse(BaseModel):
